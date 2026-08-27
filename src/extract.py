@@ -1,8 +1,10 @@
 """
 PDF text extraction.
 
-Extracts page-by-page so downstream chunking can tag every passage with
-its source page number.
+Extracts page-by-page (not one giant blob) so downstream chunking can
+tag every passage with the page it came from -- this is the metadata
+needed later to point a citation back to a specific spot in a specific
+document, not just "somewhere in this PDF".
 """
 from pathlib import Path
 from typing import List
@@ -39,6 +41,6 @@ def extract_pages(pdf_path: str) -> List[Page]:
 
 def extract_text(pdf_path: str) -> str:
     """Convenience helper: full document text as one string (pages joined
-    with a blank line). Used for the Level 1 full-document fallback mode."""
+    with a blank line). Used for the full-document fallback mode."""
     pages = extract_pages(pdf_path)
     return "\n\n".join(p.text for p in pages)

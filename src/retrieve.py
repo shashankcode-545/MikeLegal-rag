@@ -1,8 +1,13 @@
 """
 The retrieval-vs-full-read decision.
 
-Given a question and an already-built index, decide whether a confident
-passage match exists ("search" mode) or fall back to the full document.
+This is a key quality signal the rest of the pipeline depends on. It
+is intentionally a single, pure-ish function: given a question and an
+already-built index, decide whether a confident enough
+passage match exists ("search" mode) or whether the system should fall
+back to reading the entire document ("full_document" mode). Routing
+reuses this function's output directly as one of its inputs -- so it
+must stay simple and stable rather than growing extra responsibilities.
 """
 import json
 import time
@@ -28,7 +33,13 @@ def decide(
     log_path: Optional[Path] = None,
 ) -> RetrievalResult:
     """Decide whether to answer from retrieved passages or the full
-    document, and log that decision."""
+    document, and log that decision.
+
+    `top_k` and `threshold` are plain function parameters -- this is
+    what makes retrieval sensitivity "configurable per request" without
+    any config file, server flag, or UI: callers just pass different
+    values, and the defaults above are what's used if they don't.
+    """
     hits = index.search(question, top_k=top_k)
     top_score = hits[0][1] if hits else 0.0
 

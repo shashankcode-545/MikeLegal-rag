@@ -1,9 +1,13 @@
 """
 Cross-document citation grounding.
 
-Retrieves evidence from each document separately (reusing retrieve.decide()),
-combines excerpts into a single fusion prompt with traceable citation tags,
-produces one LLM answer, and verifies citations against retrieved passages.
+For questions spanning more than one document: retrieve evidence from
+each document separately (reusing retrieve.decide(), no LLM calls),
+fuse it into one prompt tagged with per-passage citation tags, make a
+single LLM call routed to the strongest tier and through the critique
+flow, then verify every citation the answer makes against what was
+actually retrieved. Total LLM calls: 1-3, independent of document
+count, since only the single fused answer is generated/reviewed.
 """
 import re
 from typing import List, NamedTuple, Optional
@@ -30,7 +34,10 @@ CROSS_DOC_SYSTEM_PROMPT = (
 
 
 class LoadedDocument(NamedTuple):
-    """A loaded and embedded document, ready for cross-document queries."""
+    """A convenience wrapper around load_document_index()'s return
+    value, with named fields instead of tuple positions. Purely a
+    readability aid local to this module -- pipeline.py's own return
+    shape is untouched."""
     doc_id: str
     index: EmbeddedIndex
     full_text: str
@@ -38,8 +45,9 @@ class LoadedDocument(NamedTuple):
 
 
 def load_documents(pdf_paths: List[str], encode_fn=None) -> List[LoadedDocument]:
-    """Load and embed each document once, so answer_cross_document()
-    can be called repeatedly without re-processing."""
+    """Load and embed each document ONCE, so answer_cross_document() can
+    be called repeatedly across many questions without re-extracting,
+    re-chunking, or re-embedding any document."""
     loaded = []
     for path in pdf_paths:
         doc_id, _chunks, index, full_text, language = load_document_index(
@@ -57,10 +65,9 @@ def extract_from_documents(
     top_k: int = DEFAULT_TOP_K,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> List[CrossDocExtraction]:
-    """Retrieve relevant evidence from each document for one question.
-
-    Search-mode hits produce one CrossDocExtraction per chunk, citable
-    by chunk_id. A full-document fallback produces one extraction
+    """Run retrieve.decide() once per document. A search-mode hit
+    produces one CrossDocExtraction per retrieved chunk, citable by
+    its chunk_id; a full-document fallback produces one extraction
     citable as "{doc_id}::full_document"."""
     extractions: List[CrossDocExtraction] = []
     for doc in documents:
@@ -111,7 +118,10 @@ _CITATION_TAG_RE = re.compile(r"\[([^\]]+)\]")
 def verify_citations(answer_text: str, extractions: List[CrossDocExtraction]) -> List[str]:
     """Check every bracketed citation tag in `answer_text` against the
     tags that were actually retrieved. Returns a list of warning
-    strings for unverifiable tags. Never raises or modifies the answer."""
+    strings -- one per distinct unverifiable tag. Never raises and
+    never modifies `answer_text`: an unverifiable citation is surfaced
+    as a warning, not a failure.
+    """
     known_tags = {extraction.citation_tag for extraction in extractions}
     warnings: List[str] = []
     seen_bad_tags = set()
@@ -123,8 +133,10 @@ def verify_citations(answer_text: str, extractions: List[CrossDocExtraction]) ->
 
 
 def _combine_languages(languages: List[str]) -> str:
-    """Combine per-document language buckets into one routing signal.
-    Any non-English or mixed document upgrades the whole query to 'mixed'."""
+    """Combine per-document language buckets into one signal for
+    routing. If ANY document involved is non-English or mixed, the
+    whole cross-document question is treated as needing the strongest
+    tier for language safety."""
     if any(language in ("non_english", "mixed") for language in languages):
         return "mixed"
     return "english"
@@ -139,9 +151,12 @@ def answer_cross_document(
 ) -> CrossDocAnswer:
     """Answer one question spanning multiple documents.
 
-    `documents` should come from load_documents() so this can be called
-    repeatedly without re-embedding. The fusion answer goes through
-    critique with is_reasoning_heavy=True."""
+    `documents` should come from load_documents() so this can be
+    called repeatedly across many questions without re-embedding
+    anything. Makes one fusion LLM call, then always routes it through
+    the critique flow (cross-document comparison is treated as
+    reasoning-heavy), adding 0-2 more calls.
+    """
     if not documents:
         raise ValueError("answer_cross_document requires at least one loaded document.")
 
@@ -166,6 +181,8 @@ def answer_cross_document(
         system_prompt=CROSS_DOC_SYSTEM_PROMPT,
     )
 
+    # Give the reviewer the same excerpts the fusion step saw, so it can
+    # check the draft's claims and citations against the real evidence.
     critique_context = "\n\n".join(
         f"[{extraction.citation_tag}] {extraction.text}" for extraction in extractions
     )

@@ -1,8 +1,14 @@
 """
 Thin OpenRouter wrapper.
 
-One function that sends a chat completion request and returns the text.
-`resolve_model_for_tier()` maps route.py's tier names to real model ids.
+Deliberately does the minimum: one function that sends one chat
+completion request and returns the text. No retries, no streaming, no
+SDK -- OpenRouter is a plain HTTPS JSON API, so `requests` is enough.
+
+`resolve_model_for_tier()` maps route.py's chosen tier
+("light"/"standard"/"strong") to a real OpenRouter model id. `call()`
+also takes an optional `system_prompt` override (for casual,
+document-free questions) and handles empty context gracefully.
 """
 import os
 from typing import Optional
@@ -11,6 +17,8 @@ import requests
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Used only if no model is explicitly passed in and no OPENROUTER_MODEL
+# env var is set. Kept as a fallback, not a hidden requirement.
 FALLBACK_MODEL = "openai/gpt-4o-mini"
 
 SYSTEM_PROMPT = (
@@ -23,13 +31,17 @@ SYSTEM_PROMPT = (
     "answer is based on."
 )
 
+# Used for the "casual conversation, no document" routing case, where
+# there is no contract text to ground answers in.
 CASUAL_SYSTEM_PROMPT = (
     "You are a friendly assistant for a legal document tool. The user "
     "is making casual conversation, not asking about a specific "
     "document. Respond naturally and briefly."
 )
 
-# Tier -> real OpenRouter model id. Override any via .env.
+# route.py decides which tier should answer; this is the one place
+# that maps a tier name to an actual model id. All three defaults are
+# the same model family (Llama 3.x); override any via .env.
 _TIER_ENV_VARS = {
     "light": "MODEL_TIER_LIGHT",
     "standard": "MODEL_TIER_STANDARD",
@@ -44,7 +56,7 @@ _TIER_DEFAULTS = {
 
 
 def resolve_model_for_tier(tier: str) -> str:
-    """Map a Level 2 tier name to a real OpenRouter model id.
+    """Map a tier name to a real OpenRouter model id.
 
     Reads the id from the matching env var (MODEL_TIER_LIGHT/STANDARD/
     STRONG) if it's set, otherwise falls back to a same-model-family

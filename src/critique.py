@@ -1,3 +1,15 @@
+"""
+Critique and revision for reasoning-heavy questions.
+
+Adds a distinct "reviewer" pass over a draft answer and, only if the
+reviewer flags a real issue, one regeneration attempt with that
+feedback folded in. Costs 1 call if not reasoning-heavy, 2 if reviewed
+and OK, 3 if reviewed, flagged, and regenerated -- never more than
+that, since only one regeneration attempt is ever made. The regenerate
+prompt asks the model to prefix "UNRESOLVED:" if it still can't fix
+the issue, so a single call's text tells us fixed-vs-not without a
+fourth call.
+"""
 import json
 import re
 import time
@@ -111,8 +123,10 @@ def answer_with_critique(
     doc_id: str = "",
     log_path: Optional[Path] = None,
 ) -> CritiqueResult:
-    """Run the critique/revision flow on an already-generated draft,
-    if (and only if) `is_reasoning_heavy` is True."""
+    """Run the critique/revision flow on an already-generated draft, if
+    (and only if) `is_reasoning_heavy` is True. `draft_answer` is
+    passed in rather than generated here, so this only ever adds calls
+    on top of the caller's draft call, never duplicates it."""
     if not is_reasoning_heavy:
         result = CritiqueResult(
             final_answer=draft_answer,
@@ -169,8 +183,9 @@ def answer_with_critique(
 def _log_critique_decision(
     doc_id: str, question: str, result: CritiqueResult, log_path: Optional[Path]
 ) -> None:
-    """Append one JSON line per question, including the 1-call
-    never-reviewed case."""
+    """Append one JSON line per question, including the 1-call,
+    never-reviewed case, so the log shows call counts for every
+    question, not just the expensive ones."""
     resolved_path = log_path if log_path is not None else DEFAULT_LOG_PATH
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
     entry = {

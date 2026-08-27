@@ -1,20 +1,44 @@
+"""
+Legal-aware chunking.
+
+Contracts already segment themselves via their own numbering ("1.",
+"1.1", "ARTICLE II", "Section 4"). Splitting on those boundaries gives
+chunks that line up with what a lawyer would call "a clause", which
+makes them meaningful units to cite. If a document has little or no
+detectable heading structure, falls back to fixed-size word windows so
+nothing is ever left unchunked.
+"""
 import re
 from typing import List
 
 from src.models import Chunk, Page
 
+# Matches a line that STARTS a numbered clause/section, e.g.:
+#   "1. DEFINITIONS"
+#   "1.1 Confidential Information shall mean..."
+#   "2.3.4 Some deeply nested clause"
+#   "ARTICLE II"  /  "Section 4"
 HEADING_RE = re.compile(
     r"^\s*(?:\d+(?:\.\d+)*\.?\s+\S"
     r"|(?:ARTICLE|Article|SECTION|Section)\s+([IVXLCDM]+|\d+)\b)"
 )
 
+# Below this many heading-based chunks, we don't trust the structure
+# enough to rely on it (e.g. a one-page letter with a single "1.").
 MIN_HEADING_CHUNKS = 3
 
+# Fixed-size fallback window, in words.
 FALLBACK_CHUNK_WORDS = 200
 FALLBACK_OVERLAP_WORDS = 30
 
 
 def chunk_document(pages: List[Page], doc_id: str) -> List[Chunk]:
+    """Split a document's pages into Chunks.
+
+    Chunk IDs are deterministic: "{doc_id}::c000", "{doc_id}::c001", ...
+    in document order, so re-chunking the same document always produces
+    the same IDs.
+    """
     chunks = _chunk_by_headings(pages, doc_id)
     if len(chunks) >= MIN_HEADING_CHUNKS:
         return chunks
@@ -57,6 +81,8 @@ def _chunk_by_headings(pages: List[Page], doc_id: str) -> List[Chunk]:
 
 
 def _chunk_by_fixed_size(pages: List[Page], doc_id: str) -> List[Chunk]:
+    # Flatten to (word, page_number) so each window can still report
+    # which page it started on.
     words_with_pages = []
     for page in pages:
         for word in page.text.split():

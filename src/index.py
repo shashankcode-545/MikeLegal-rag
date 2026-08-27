@@ -1,9 +1,17 @@
 """
 In-memory embedding index for a single document's chunks.
 
-Uses numpy cosine similarity rather than a vector database, appropriate
-for the scale of individual contracts. The encoder is injectable
-(`encode_fn`) so tests can substitute a deterministic fake.
+No vector database. At the scale of one contract (tens of chunks), a
+numpy array plus a cosine similarity computation is the entire "index" --
+anything more (FAISS, Chroma, Pinecone) would be solving a problem this
+project doesn't have.
+
+The encoder is injectable (`encode_fn`) rather than hardcoded. In normal
+use this defaults to a local sentence-transformers model, downloaded
+once and run entirely offline after that -- no API cost. Tests inject a
+small deterministic fake encoder instead, so retrieval-decision tests
+don't need network access or a multi-hundred-MB model just to check
+threshold/top_k logic.
 """
 from typing import Callable, List, Optional, Tuple
 

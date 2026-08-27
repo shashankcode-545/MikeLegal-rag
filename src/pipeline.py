@@ -1,10 +1,12 @@
 """
 Pipeline: extraction -> chunking -> indexing -> retrieval -> routing -> LLM.
 
-load_document_index() does one-time-per-document work (extract, chunk,
-embed, detect language). answer_single_document() handles per-question
-retrieval, routing, generation, and critique. answer_casual() handles
-document-free conversation.
+load_document_index() does the one-time-per-document work. Per
+question, answer_single_document() retrieves, classifies complexity,
+routes to a model tier, calls the LLM, and runs the critique/revision
+flow for reasoning-heavy (conflict/override) questions; other
+questions pass through at one LLM call. answer_casual() skips
+retrieval entirely for document-free conversation.
 """
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -34,7 +36,7 @@ def load_document_index(
     pdf_path: str, encode_fn=None
 ) -> Tuple[str, List[Chunk], EmbeddedIndex, str, str]:
     """Do the one-time-per-document work: extract, chunk, embed, and
-    (Level 2) detect language.
+    detect language.
 
     Returns (doc_id, chunks, index, full_document_text, language). Keep
     the returned index/full_text/language and pass them back into
@@ -132,8 +134,7 @@ def answer_single_document(
 
 
 def answer_casual(question: str, model: Optional[str] = None) -> Answer:
-    """Answer a casual, document-independent question -- Level 2's
-    'casual conversation, no document' routing case. Skips retrieval
+    """Answer a casual, document-independent question. Skips retrieval
     entirely since there is no document to search."""
     complexity = classify_complexity(question, has_document=False, retrieval_mode=None)
     decision = route(language="none", complexity=complexity, doc_id="", question=question)
