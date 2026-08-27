@@ -1,0 +1,16 @@
+# --- Level 1: extraction, chunking, embedding, retrieval ---
+pypdf==4.3.1                # PDF text extraction (pure Python, no system deps)
+sentence-transformers==3.0.1  # local embeddings (all-MiniLM-L6-v2) — no API cost
+numpy==1.26.4                # cosine similarity math over embedding vectors
+
+# --- Level 2: language detection ---
+langdetect==1.0.9            # cheap, deterministic language ID (no LLM call)
+
+# --- LLM calls (Levels 1-4 answer generation, critique, fusion) ---
+requests==2.32.3             # OpenRouter is a plain HTTPS API, no SDK needed
+
+# --- Config ---
+python-dotenv==1.0.1          # load OPENROUTER_API_KEY from .env
+
+# --- Testing ---
+pytest==8.3.2

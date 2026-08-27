@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+
+# leave logs/ directory tracked (via .gitkeep) but ignore generated log data
+logs/*.jsonl
+
+# local embedding cache if we add one later
+.cache/
